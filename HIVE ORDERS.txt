@@ -1,0 +1,162 @@
+set hive.cli.print.current.db=true;
+
+
+
+CREATE TABLE elecciones_tmp(
+anyo int COMMENT 'Año en formato yyyy',
+provincia string COMMENT 'Provincia',
+localidad string COMMENT 'Localidad',
+partido string COMMENT 'Partido',
+votos int COMMENT 'Votos obtenidos'
+ ) COMMENT 'Datos electorales por municipios'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY '\;'
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE; 
+
+LOAD DATA LOCAL INPATH '/warehouse/m7/U2/*.csv' INTO TABLE m7.elecciones_tmp;
+
+CREATE TABLE elecciones AS 
+SELECT
+anyo,
+IF(provincia like '%VILA','ÁVILA',provincia) AS provincia,
+localidad,
+partido,
+regexp_replace(votos, '\\.', '') AS votos
+FROM elecciones_tmp;
+
+CREATE TABLE elecciones_orc(
+anyo int COMMENT 'Año en formato yyyy',
+provincia string COMMENT 'Provincia',
+localidad string COMMENT 'Localidad',
+partido string COMMENT 'Partido',
+votos int COMMENT 'Votos obtenidos'
+) COMMENT 'Datos electorales por municipios'
+STORED AS ORC
+TBLPROPERTIES('Experiment Name' = 'Curso hive', 'created_at' = '27/01/2020');
+
+INSERT OVERWRITE TABLE elecciones_orc SELECT  * FROM elecciones;
+
+CREATE TABLE elecciones_bucket(
+anyo int COMMENT 'Año',
+provincia string COMMENT 'Provincia',
+localidad string COMMENT 'Localidad',
+partido string COMMENT 'Partido',
+votos int COMMENT 'Votos obtenidos'
+) COMMENT 'Datos electorales por municipios'
+CLUSTERED BY (provincia) SORTED BY (localidad) INTO 3 BUCKETS 
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\;' 
+LINES TERMINATED BY '\n' 
+STORED AS TEXTFILE 
+TBLPROPERTIES('Experiment Name' = 'Curso hive', 'created_at' = '27/01/2020');
+
+INSERT OVERWRITE TABLE elecciones_bucket SELECT  * FROM elecciones;
+
+CREATE TABLE elecciones_part(
+provincia string COMMENT 'Provincia',
+localidad string COMMENT 'Localidad',
+partido string COMMENT 'Partido',
+votos int COMMENT 'Votos obtenidos'
+) COMMENT 'Datos electorales por municipios'
+PARTITIONED BY (anyo int COMMENT 'anyo particion') 
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\;' 
+LINES TERMINATED BY '\n' 
+STORED AS TEXTFILE 
+TBLPROPERTIES('Experiment Name' = 'Curso hive', 'created_at' = '27/01/2020');
+
+INSERT OVERWRITE TABLE elecciones_part 
+PARTITION(anyo=2015)
+SELECT provincia,localidad,partido,votos 
+FROM elecciones 
+WHERE anyo=2015;
+
+CREATE TABLE elecciones_ext(
+anyo int COMMENT 'Año en formato yyyy',
+provincia string COMMENT 'Provincia',
+localidad string COMMENT 'Localidad',
+partido string COMMENT 'Partido',
+votos int COMMENT 'Votos obtenidos'
+ ) COMMENT 'Datos electorales por municipios'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY '\;'
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE 
+LOCATION '/warehouse/external/'
+TBLPROPERTIES('Experiment Name' = 'Curso hive', 'created_at' = '27/01/2020');
+
+INSERT OVERWRITE TABLE elecciones_ext SELECT  * FROM elecciones;
+
+
+CREATE TABLE olimpiadas.athletes ( Athlete string , Age tinyint , Country string , Year smallint , ClosingCeremonyDate string , Sport string , GoldMedals tinyint , SilverMedals bigint , BronzeMedals tinyint , TotalMedals tinyint ) COMMENT "Athletas que ganaron alguna medalla en los Juegos Olimpicos" ROW FORMAT DELIMITED FIELDS TERMINATED BY '|' STORED AS TextFile;
+
+LOAD DATA INPATH '/master/m7/input/OlympicAthletes.txt' OVERWRITE INTO TABLE olimpiadas.athletes;
+
+SELECT country, sum(totalmedals) total_medals FROM olimpiadas.athletes GROUP BY country ORDER BY total_medals DESC;
+
+
+---------------TAREA---------------
+
+use m7;
+
+CREATE TABLE contracts_tmp(
+codigo_mes int,
+provincia string,
+municipio string,
+total_contratos int,
+contratos_hombres int,
+contratos_mujeres int
+ ) COMMENT 'Contratos por municipio'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY '\;'
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE; 
+
+LOAD DATA LOCAL INPATH '/warehouse/m7/U1/data/Contratos_por_municipio.csv' INTO TABLE m7.contracts_tmp;
+
+CREATE TABLE contracts AS 
+SELECT
+IF(provincia like '%VILA','ÁVILA',provincia) AS provincia,
+contratos_mujeres,
+contratos_hombres
+FROM contracts_tmp;
+
+SELECT * FROM contracts;
+
+CREATE TABLE provinces_regions(
+Comunidad_autonoma string,
+Provincia string
+ ) COMMENT 'Provincias por region'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY '\;'
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE; 
+
+LOAD DATA LOCAL INPATH '/warehouse/m7/U1/data/Comunidades_y_provincias.csv' INTO TABLE m7.provinces_regions;
+
+SELECT * FROM provinces_regions;
+
+//HACEMOS EL INNER JOIN
+
+CREATE TABLE Region_contracts AS 
+SELECT provinces_regions.Comunidad_Autonoma AS comunidad_autonoma, 
+sum(contracts.contratos_mujeres) AS contratos_mujeres, 
+sum(contracts.contratos_hombres) AS contratos_hombres 
+FROM provinces_regions
+WHERE sum(contracts.contratos_mujeres) > sum(contracts.contratos_hombres)
+INNER JOIN contracts ON 
+provinces_regions.Provincia = contracts.provincia 
+GROUP BY provinces_regions.Comunidad_Autonoma;
+
+SELECT * FROM region_contracts WHERE contratos_mujeres > contratos_hombres;
+
+
+SELECT provinces_regions.Comunidad_Autonoma AS comunidad_autonoma, 
+sum(contracts.contratos_mujeres) AS contratos_mujeres, 
+sum(contracts.contratos_hombres) AS contratos_hombres 
+FROM provinces_regions 
+INNER JOIN contracts ON 
+provinces_regions.Provincia = contracts.provincia 
+GROUP BY provinces_regions.Comunidad_Autonoma
+WHERE contracts.contratos_mujeres > contracts.contratos_hombres;
